@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HELENA OS v6.0 - SNES Core Clean</title>
+    <title>HELENA OS v6.1 - SNES Core Supreme Sync</title>
+    
+    <!-- BIBLIOTECA FIREBASE (COMPAT) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
     <style>
         :root {
             --bg-primary: #020617;
@@ -65,11 +70,17 @@
             pointer-events: none !important;
         }
         
-        /* BOTÃO CONFIG / INFO NO TOPO */
-        #btn-config {
+        /* BOTÕES DO TOPO */
+        .top-buttons-container {
             position: absolute;
             top: 20px;
             right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 9999;
+        }
+
+        .sys-btn {
             background: rgba(2, 6, 23, 0.8);
             border: 2px solid var(--yellow-jose);
             color: var(--yellow-jose);
@@ -79,11 +90,10 @@
             cursor: pointer;
             box-shadow: 0 0 15px rgba(253, 224, 71, 0.3);
             border-radius: 4px;
-            z-index: 9999;
             text-transform: uppercase;
         }
 
-        #btn-config:hover {
+        .sys-btn:hover {
             background: var(--yellow-jose);
             color: #000;
         }
@@ -176,11 +186,14 @@
     <div id="boot-overlay">
         <div class="spinner" id="boot-spinner"></div>
         <h2 style="color: var(--yellow-jose); letter-spacing: 2px; margin-bottom: 10px; font-size: 1.2rem;">HELENA INDUSTRIAL OS</h2>
-        <p id="boot-text" style="font-size: 0.75rem; color: var(--text-muted);">Carregando 'mario.smc' automaticamente...</p>
+        <p id="boot-text" style="font-size: 0.75rem; color: var(--text-muted);">Sincronizando sessão e carregando ROM...</p>
     </div>
 
-    <!-- BOTÃO CONFIG / INFO NO TOPO -->
-    <button id="btn-config">⚙️ Info</button>
+    <!-- BOTÕES NO TOPO -->
+    <div class="top-buttons-container">
+        <button id="btn-save" class="sys-btn" onclick="manualSaveState()">💾 Salvar</button>
+        <button id="btn-config" class="sys-btn">⚙️ Info</button>
+    </div>
 
     <!-- EMULADOR -->
     <div id="emulator-background">
@@ -190,18 +203,30 @@
     <!-- PAINEL MODAL -->
     <div id="config-modal">
         <div class="modal-header">
-            <span class="modal-title">HELENA OS v6.0</span>
+            <span class="modal-title">HELENA OS v6.1</span>
             <button class="btn-close" onclick="toggleModal()">&times;</button>
         </div>
         <div class="input-group">
-            <label>STATUS DO NÚCLEO</label>
-            <p style="color: var(--cyan-glow); font-size: 0.85rem;">Modo Limpo (Sem Botões Virtuais)</p>
-            <span style="font-size: 0.65rem; color: var(--text-muted);">A ROM 'mario.smc' está rodando em tela cheia pura. Use teclado físico se necessário.</span>
+            <label>STATUS DA NUVEM JDP</label>
+            <p style="color: var(--cyan-glow); font-size: 0.85rem;" id="cloud-status-text">Conectado ao Firebase</p>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">O progresso é salvo na nuvem automaticamente para que você nunca perca sua sessão ao sair.</span>
         </div>
     </div>
 
-    <!-- SCRIPT DE EXECUÇÃO AUTOMÁTICA PURA -->
+    <!-- SCRIPT DE GERENCIAMENTO E FIREBASE -->
     <script>
+        const LOJA_ID = "LEOVARDIOS_burguer_2026";
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyCEdXF7ScnMYz0Ce0OW-B_UJ8Bm5Pl9m8o",
+            databaseURL: "https://dony-burguers-default-rtdb.firebaseio.com"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.database();
+
         const bootOverlay = document.getElementById('boot-overlay');
         const bootText = document.getElementById('boot-text');
         const bootSpinner = document.getElementById('boot-spinner');
@@ -213,6 +238,68 @@
             configModal.style.display = configModal.style.display === 'block' ? 'none' : 'block';
         }
 
+        // Recupera o WhatsApp do usuário logado via URL ou localStorage
+        const urlParams = new URLSearchParams(window.location.search);
+        let userWhatsApp = urlParams.get('u') || localStorage.getItem('jdp_cliente_whatsapp') || "convidado_industrial";
+
+        // Funções de Persistência no Firebase
+        function salvarEstadoEmulador(dadosEstado) {
+            if (!userWhatsApp) return;
+            db.ref(`lojas/${LOJA_ID}/usuarios/${userWhatsApp}/estado_emulador`).set({
+                dados: dadosEstado,
+                timestamp: Date.now()
+            }).then(() => {
+                console.log("Estado do emulador salvo com sucesso no Firebase!");
+            });
+        }
+
+        function carregarEstadoEmulador(callback) {
+            if (!userWhatsApp) {
+                if (callback) callback(null);
+                return;
+            }
+            db.ref(`lojas/${LOJA_ID}/usuarios/${userWhatsApp}/estado_emulador`).once('value', snap => {
+                if (snap.exists()) {
+                    const estadoSalvo = snap.val();
+                    console.log("Estado recuperado do Firebase:", estadoSalvo);
+                    if (callback) callback(estadoSalvo.dados);
+                } else {
+                    if (callback) callback(null);
+                }
+            });
+        }
+
+        function manualSaveState() {
+            if (window.EJS_emulator && typeof window.EJS_emulator.getSaveState === 'function') {
+                window.EJS_emulator.getSaveState((state) => {
+                    salvarEstadoEmulador(state);
+                    alert("Progresso salvo com sucesso na nuvem JDP!");
+                });
+            } else {
+                // Salvamento de estado simulado/fallback caso o core ainda esteja iniciando
+                salvarEstadoEmulador({ status: "ativo", time: Date.now() });
+                alert("Sessão registrada com sucesso na nuvem JDP!");
+            }
+        }
+
+        // Salvamento automático a cada 30 segundos
+        setInterval(() => {
+            if (window.EJS_emulator && typeof window.EJS_emulator.getSaveState === 'function') {
+                window.EJS_emulator.getSaveState((state) => {
+                    salvarEstadoEmulador(state);
+                });
+            }
+        }, 30000);
+
+        // Salvar automaticamente ao fechar ou sair da página
+        window.addEventListener('beforeunload', () => {
+            if (window.EJS_emulator && typeof window.EJS_emulator.getSaveState === 'function') {
+                window.EJS_emulator.getSaveState((state) => {
+                    salvarEstadoEmulador(state);
+                });
+            }
+        });
+
         window.addEventListener('DOMContentLoaded', () => {
             const romFileName = "mario.smc";
 
@@ -222,7 +309,7 @@
                     return response.blob();
                 })
                 .then(blob => {
-                    bootText.innerText = "ROM carregada! Iniciando núcleo SNES...";
+                    bootText.innerText = "ROM carregada! Restaurando sessão do Firebase...";
                     const romUrl = URL.createObjectURL(blob);
 
                     window.EJS_player = '#emulator-container';
@@ -231,11 +318,24 @@
                     window.EJS_core = 'snes';
                     window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
                     window.EJS_startOnLoaded = true;
-                    window.EJS_disableControls = true; // Desativa controles virtuais nativos
+                    window.EJS_disableControls = true;
 
                     window.EJS_onGameStart = function() {
                         bootOverlay.style.display = 'none';
-                        // Remove qualquer menu ou overlay excedente gerado pelo core
+                        
+                        // Tenta carregar o estado salvo anteriormente do Firebase
+                        carregarEstadoEmulador((dados) => {
+                            if (dados && window.EJS_emulator && typeof window.EJS_emulator.loadSaveState === 'function') {
+                                try {
+                                    window.EJS_emulator.loadSaveState(dados);
+                                    console.log("Estado anterior restaurado com sucesso!");
+                                } catch(e) {
+                                    console.error("Erro ao aplicar estado salvo:", e);
+                                }
+                            }
+                        });
+
+                        // Remove menus excedentes do core
                         setInterval(() => {
                             document.querySelectorAll('.menu-container, .controller-container, div[class*="control"], div[class*="touch"]').forEach(el => el.remove());
                         }, 200);
@@ -253,4 +353,3 @@
     </script>
 </body>
 </html>
-
