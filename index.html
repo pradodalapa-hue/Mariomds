@@ -35,19 +35,17 @@
             background-color: #000;
         }
 
-        /* Efeito de scanline retro */
         body::before {
             content: " ";
             display: block;
             position: fixed;
             top: 0; left: 0; bottom: 0; right: 0;
-            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%);
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
             z-index: 9999;
             background-size: 100% 4px;
             pointer-events: none;
         }
 
-        /* CONTAINER DO EMULADOR */
         #emulator-background {
             position: absolute;
             top: 0;
@@ -63,14 +61,12 @@
             height: 100%;
         }
 
-        /* OCULTAR QUALQUER CONTROLE NATIVO DO EMULATORJS */
         .menu-container, .controller-container, div[id*="control"], div[class*="control"], div[class*="touch"], .settings-menu {
             display: none !important;
             opacity: 0 !important;
             pointer-events: none !important;
         }
         
-        /* BOTÕES DO TOPO */
         .top-buttons-container {
             position: absolute;
             top: 20px;
@@ -81,7 +77,7 @@
         }
 
         .sys-btn {
-            background: rgba(2, 6, 23, 0.8);
+            background: rgba(2, 6, 23, 0.85);
             border: 2px solid var(--yellow-jose);
             color: var(--yellow-jose);
             padding: 8px 14px;
@@ -98,7 +94,6 @@
             color: #000;
         }
 
-        /* PAINEL MODAL */
         #config-modal {
             position: fixed;
             top: 50%;
@@ -149,7 +144,6 @@
             margin-bottom: 4px;
         }
 
-        /* BOOT OVERLAY */
         #boot-overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -182,25 +176,21 @@
 </head>
 <body>
 
-    <!-- BOOT INICIAL DA HELENA -->
     <div id="boot-overlay">
         <div class="spinner" id="boot-spinner"></div>
         <h2 style="color: var(--yellow-jose); letter-spacing: 2px; margin-bottom: 10px; font-size: 1.2rem;">HELENA INDUSTRIAL OS</h2>
-        <p id="boot-text" style="font-size: 0.75rem; color: var(--text-muted);">Sincronizando sessão e carregando ROM...</p>
+        <p id="boot-text" style="font-size: 0.75rem; color: var(--text-muted);">Iniciando motor e carregando ROM...</p>
     </div>
 
-    <!-- BOTÕES NO TOPO -->
     <div class="top-buttons-container">
         <button id="btn-save" class="sys-btn" onclick="manualSaveState()">💾 Salvar</button>
         <button id="btn-config" class="sys-btn">⚙️ Info</button>
     </div>
 
-    <!-- EMULADOR -->
     <div id="emulator-background">
         <div id="emulator-container"></div>
     </div>
 
-    <!-- PAINEL MODAL -->
     <div id="config-modal">
         <div class="modal-header">
             <span class="modal-title">HELENA OS v6.1</span>
@@ -209,11 +199,10 @@
         <div class="input-group">
             <label>STATUS DA NUVEM JDP</label>
             <p style="color: var(--cyan-glow); font-size: 0.85rem;" id="cloud-status-text">Conectado ao Firebase</p>
-            <span style="font-size: 0.65rem; color: var(--text-muted);">O progresso é salvo na nuvem automaticamente para que você nunca perca sua sessão ao sair.</span>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">O progresso é salvo na nuvem automaticamente.</span>
         </div>
     </div>
 
-    <!-- SCRIPT DE GERENCIAMENTO E FIREBASE -->
     <script>
         const LOJA_ID = "LEOVARDIOS_burguer_2026";
         
@@ -238,32 +227,41 @@
             configModal.style.display = configModal.style.display === 'block' ? 'none' : 'block';
         }
 
-        // Recupera o WhatsApp do usuário logado via URL ou localStorage
         const urlParams = new URLSearchParams(window.location.search);
         let userWhatsApp = urlParams.get('u') || localStorage.getItem('jdp_cliente_whatsapp') || "convidado_industrial";
 
-        // Funções de Persistência no Firebase
-        function salvarEstadoEmulador(dadosEstado) {
-            if (!userWhatsApp) return;
-            db.ref(`lojas/${LOJA_ID}/usuarios/${userWhatsApp}/estado_emulador`).set({
-                dados: dadosEstado,
-                timestamp: Date.now()
-            }).then(() => {
-                console.log("Estado do emulador salvo com sucesso no Firebase!");
-            });
+        // 1. FUNÇÃO AUTOMÁTICA DE UPLOAD (Salva na Nuvem do Firebase)
+        function autoSalvarProgressoNaNuves() {
+            if (!userWhatsApp || userWhatsApp === "convidado_industrial") return;
+
+            if (window.EJS_emulator && typeof window.EJS_emulator.getSaveState === 'function') {
+                window.EJS_emulator.getSaveState((state) => {
+                    db.ref(`lojas/${LOJA_ID}/usuarios/${userWhatsApp}/estado_emulador`).set({
+                        dados: state,
+                        timestamp: Date.now()
+                    }).then(() => {
+                        console.log("[JDP SYNC] Progresso sincronizado automaticamente com a nuvem.");
+                    }).catch(err => {
+                        console.error("[JDP SYNC] Erro ao sincronizar:", err);
+                    });
+                });
+            }
         }
 
-        function carregarEstadoEmulador(callback) {
-            if (!userWhatsApp) {
+        // 2. FUNÇÃO AUTOMÁTICA DE DOWNLOAD (Puxa da Nuvem do Firebase ao iniciar)
+        function autoCarregarProgressoDaNuvem(callback) {
+            if (!userWhatsApp || userWhatsApp === "convidado_industrial") {
                 if (callback) callback(null);
                 return;
             }
+
             db.ref(`lojas/${LOJA_ID}/usuarios/${userWhatsApp}/estado_emulador`).once('value', snap => {
                 if (snap.exists()) {
-                    const estadoSalvo = snap.val();
-                    console.log("Estado recuperado do Firebase:", estadoSalvo);
-                    if (callback) callback(estadoSalvo.dados);
+                    const registro = snap.val();
+                    console.log("[JDP SYNC] Dados encontrados na nuvem. Restaurando fase...");
+                    if (callback) callback(registro.dados);
                 } else {
+                    console.log("[JDP SYNC] Nenhum save anterior encontrado. Iniciando novo jogo.");
                     if (callback) callback(null);
                 }
             });
@@ -272,84 +270,67 @@
         function manualSaveState() {
             if (window.EJS_emulator && typeof window.EJS_emulator.getSaveState === 'function') {
                 window.EJS_emulator.getSaveState((state) => {
-                    salvarEstadoEmulador(state);
+                    db.ref(`lojas/${LOJA_ID}/usuarios/${userWhatsApp}/estado_emulador`).set({
+                        dados: state,
+                        timestamp: Date.now()
+                    });
                     alert("Progresso salvo com sucesso na nuvem JDP!");
                 });
             } else {
-                // Salvamento de estado simulado/fallback caso o core ainda esteja iniciando
-                salvarEstadoEmulador({ status: "ativo", time: Date.now() });
-                alert("Sessão registrada com sucesso na nuvem JDP!");
+                alert("O emulador ainda está inicializando. Aguarde um instante.");
             }
         }
 
-        // Salvamento automático a cada 30 segundos
+        // 3. GATILHOS AUTOMÁTICOS DE EXECUÇÃO
+        // A. Salvar automaticamente a cada 30 segundos de gameplay
         setInterval(() => {
-            if (window.EJS_emulator && typeof window.EJS_emulator.getSaveState === 'function') {
-                window.EJS_emulator.getSaveState((state) => {
-                    salvarEstadoEmulador(state);
-                });
-            }
+            autoSalvarProgressoNaNuves();
         }, 30000);
 
-        // Salvar automaticamente ao fechar ou sair da página
+        // B. Salvar automaticamente ao fechar ou sair da página
         window.addEventListener('beforeunload', () => {
-            if (window.EJS_emulator && typeof window.EJS_emulator.getSaveState === 'function') {
-                window.EJS_emulator.getSaveState((state) => {
-                    salvarEstadoEmulador(state);
-                });
-            }
+            autoSalvarProgressoNaNuves();
         });
 
         window.addEventListener('DOMContentLoaded', () => {
-            const romFileName = "mario.smc";
+            bootText.innerText = "Inicializando EmulatorJS...";
 
-            fetch(romFileName)
-                .then(response => {
-                    if (!response.ok) throw new Error("Arquivo 'mario.smc' não encontrado!");
-                    return response.blob();
-                })
-                .then(blob => {
-                    bootText.innerText = "ROM carregada! Restaurando sessão do Firebase...";
-                    const romUrl = URL.createObjectURL(blob);
+            window.EJS_player = '#emulator-container';
+            window.EJS_gameUrl = 'mario.smc'; 
+            window.EJS_core = 'snes9x';
+            window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+            window.EJS_startOnLoaded = true;
+            window.EJS_disableControls = true;
+            
+            window.EJS_webGL = true;
+            window.EJS_currentShader = 'disabled';
+            window.EJS_sampleRate = 44100;
 
-                    window.EJS_player = '#emulator-container';
-                    window.EJS_biosUrl = ''; 
-                    window.EJS_gameUrl = romUrl; 
-                    window.EJS_core = 'snes';
-                    window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
-                    window.EJS_startOnLoaded = true;
-                    window.EJS_disableControls = true;
-
-                    window.EJS_onGameStart = function() {
-                        bootOverlay.style.display = 'none';
-                        
-                        // Tenta carregar o estado salvo anteriormente do Firebase
-                        carregarEstadoEmulador((dados) => {
-                            if (dados && window.EJS_emulator && typeof window.EJS_emulator.loadSaveState === 'function') {
-                                try {
-                                    window.EJS_emulator.loadSaveState(dados);
-                                    console.log("Estado anterior restaurado com sucesso!");
-                                } catch(e) {
-                                    console.error("Erro ao aplicar estado salvo:", e);
-                                }
-                            }
-                        });
-
-                        // Remove menus excedentes do core
-                        setInterval(() => {
-                            document.querySelectorAll('.menu-container, .controller-container, div[class*="control"], div[class*="touch"]').forEach(el => el.remove());
-                        }, 200);
-                    };
-
-                    const loaderScript = document.createElement('script');
-                    loaderScript.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
-                    document.body.appendChild(loaderScript);
-                })
-                .catch(err => {
-                    bootSpinner.style.display = 'none';
-                    bootText.innerHTML = `<span style="color: #ef4444;">ERRO: ${err.message}</span>`;
+            window.EJS_onGameStart = function() {
+                bootOverlay.style.display = 'none';
+                
+                // PUXA OS DADOS DO FIREBASE AUTOMATICAMENTE AO ABRIR
+                autoCarregarProgressoDaNuvem((dadosSalvos) => {
+                    if (dadosSalvos && window.EJS_emulator && typeof window.EJS_emulator.loadSaveState === 'function') {
+                        try {
+                            window.EJS_emulator.loadSaveState(dadosSalvos);
+                            console.log("Fase anterior carregada com sucesso do Firebase!");
+                        } catch(e) {
+                            console.error("Erro ao aplicar o save da nuvem:", e);
+                        }
+                    }
                 });
+
+                setInterval(() => {
+                    document.querySelectorAll('.menu-container, .controller-container, div[class*="control"], div[class*="touch"]').forEach(el => el.remove());
+                }, 500);
+            };
+
+            const loaderScript = document.createElement('script');
+            loaderScript.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
+            document.body.appendChild(loaderScript);
         });
     </script>
 </body>
 </html>
+
