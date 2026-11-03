@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HELENA OS v6.0 - SNES Core Clean</title>
+    <style>
+        :root {
+            --bg-primary: #020617;
+            --bg-secondary: #0f172a;
+            --cyan-glow: #06b6d4;
+            --yellow-jose: #fde047;
+            --text-muted: #94a3b8;
+            --border-color: #1e293b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+        }
+
+        /* Efeito de scanline retro */
+        body::before {
+            content: " ";
+            display: block;
+            position: fixed;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%);
+            z-index: 9999;
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        /* CONTAINER DO EMULADOR */
+        #emulator-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+            background: #000;
+        }
+
+        #emulator-container {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* OCULTAR QUALQUER CONTROLE NATIVO DO EMULATORJS */
+        .menu-container, .controller-container, div[id*="control"], div[class*="control"], div[class*="touch"], .settings-menu {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        
+        /* BOTÃO CONFIG / INFO NO TOPO */
+        #btn-config {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(2, 6, 23, 0.8);
+            border: 2px solid var(--yellow-jose);
+            color: var(--yellow-jose);
+            padding: 8px 14px;
+            font-weight: bold;
+            font-size: 0.8rem;
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(253, 224, 71, 0.3);
+            border-radius: 4px;
+            z-index: 9999;
+            text-transform: uppercase;
+        }
+
+        #btn-config:hover {
+            background: var(--yellow-jose);
+            color: #000;
+        }
+
+        /* PAINEL MODAL */
+        #config-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 400px;
+            background: var(--bg-secondary);
+            border: 2px solid var(--cyan-glow);
+            box-shadow: 0 0 30px rgba(6, 182, 212, 0.5);
+            padding: 20px;
+            z-index: 10000;
+            display: none;
+            border-radius: 4px;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+
+        .modal-title {
+            color: var(--yellow-jose);
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .btn-close {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.3rem;
+            cursor: pointer;
+        }
+
+        .input-group {
+            margin-bottom: 10px;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        /* BOOT OVERLAY */
+        #boot-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-primary);
+            z-index: 20000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--cyan-glow);
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid rgba(6, 182, 212, 0.1);
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            border-left-color: var(--cyan-glow);
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- BOOT INICIAL DA HELENA -->
+    <div id="boot-overlay">
+        <div class="spinner" id="boot-spinner"></div>
+        <h2 style="color: var(--yellow-jose); letter-spacing: 2px; margin-bottom: 10px; font-size: 1.2rem;">HELENA INDUSTRIAL OS</h2>
+        <p id="boot-text" style="font-size: 0.75rem; color: var(--text-muted);">Carregando 'mario.smc' automaticamente...</p>
+    </div>
+
+    <!-- BOTÃO CONFIG / INFO NO TOPO -->
+    <button id="btn-config">⚙️ Info</button>
+
+    <!-- EMULADOR -->
+    <div id="emulator-background">
+        <div id="emulator-container"></div>
+    </div>
+
+    <!-- PAINEL MODAL -->
+    <div id="config-modal">
+        <div class="modal-header">
+            <span class="modal-title">HELENA OS v6.0</span>
+            <button class="btn-close" onclick="toggleModal()">&times;</button>
+        </div>
+        <div class="input-group">
+            <label>STATUS DO NÚCLEO</label>
+            <p style="color: var(--cyan-glow); font-size: 0.85rem;">Modo Limpo (Sem Botões Virtuais)</p>
+            <span style="font-size: 0.65rem; color: var(--text-muted);">A ROM 'mario.smc' está rodando em tela cheia pura. Use teclado físico se necessário.</span>
+        </div>
+    </div>
+
+    <!-- SCRIPT DE EXECUÇÃO AUTOMÁTICA PURA -->
+    <script>
+        const bootOverlay = document.getElementById('boot-overlay');
+        const bootText = document.getElementById('boot-text');
+        const bootSpinner = document.getElementById('boot-spinner');
+        const configModal = document.getElementById('config-modal');
+        const btnConfig = document.getElementById('btn-config');
+
+        btnConfig.addEventListener('click', toggleModal);
+        function toggleModal() {
+            configModal.style.display = configModal.style.display === 'block' ? 'none' : 'block';
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const romFileName = "mario.smc";
+
+            fetch(romFileName)
+                .then(response => {
+                    if (!response.ok) throw new Error("Arquivo 'mario.smc' não encontrado!");
+                    return response.blob();
+                })
+                .then(blob => {
+                    bootText.innerText = "ROM carregada! Iniciando núcleo SNES...";
+                    const romUrl = URL.createObjectURL(blob);
+
+                    window.EJS_player = '#emulator-container';
+                    window.EJS_biosUrl = ''; 
+                    window.EJS_gameUrl = romUrl; 
+                    window.EJS_core = 'snes';
+                    window.EJS_pathtodata = 'https://cdn.emulatorjs.org/stable/data/';
+                    window.EJS_startOnLoaded = true;
+                    window.EJS_disableControls = true; // Desativa controles virtuais nativos
+
+                    window.EJS_onGameStart = function() {
+                        bootOverlay.style.display = 'none';
+                        // Remove qualquer menu ou overlay excedente gerado pelo core
+                        setInterval(() => {
+                            document.querySelectorAll('.menu-container, .controller-container, div[class*="control"], div[class*="touch"]').forEach(el => el.remove());
+                        }, 200);
+                    };
+
+                    const loaderScript = document.createElement('script');
+                    loaderScript.src = 'https://cdn.emulatorjs.org/stable/data/loader.js';
+                    document.body.appendChild(loaderScript);
+                })
+                .catch(err => {
+                    bootSpinner.style.display = 'none';
+                    bootText.innerHTML = `<span style="color: #ef4444;">ERRO: ${err.message}</span>`;
+                });
+        });
+    </script>
+</body>
+</html>
+
